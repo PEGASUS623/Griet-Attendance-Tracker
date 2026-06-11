@@ -50,6 +50,9 @@
 <script>
     let pollInterval;
 
+    // AUTOMATIC URL DETECTION: Pointing directly to the active network domain
+    const API_BASE_URL = window.location.origin;
+
     async function startScrape() {
         const roll = document.getElementById('rollNumber').value.trim();
         const pass = document.getElementById('password').value.trim();
@@ -64,7 +67,7 @@
         document.getElementById('log-entries').innerHTML = "";
 
         try {
-            const response = await fetch('http://127.0.0.1:5000/api/scrape', {
+            const response = await fetch(`${API_BASE_URL}/api/scrape`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: roll, password: pass })
@@ -79,14 +82,14 @@
                 pollInterval = setInterval(checkStatus, 1500);
             }
         } catch (err) {
-            document.getElementById('status-text').innerHTML = `<span style="color: #e74c3c;">❌ Connection failed. Check if app.py is running.</span>`;
+            document.getElementById('status-text').innerHTML = `<span style="color: #e74c3c;">❌ Connection failed. Check if production server is active.</span>`;
             document.getElementById('fetchBtn').disabled = false;
         }
     }
 
     async function checkStatus() {
         try {
-            const response = await fetch('http://127.0.0.1:5000/api/status');
+            const response = await fetch(`${API_BASE_URL}/api/status`);
             const state = await response.json();
 
             const logBox = document.getElementById('log-entries');
@@ -158,33 +161,26 @@
         }
     }
 
-    // Interactive Frontend Bunk Calculator Engine
     async function adjustSimulation(cardIndex, originalTotal, originalAttended, offsetChange) {
-        // Find current running simulated modification accumulator or default to 0
         const card = document.getElementById(`subject-card-${cardIndex}`);
         let ongoingBunkOffset = parseInt(card.getAttribute('data-bunk-offset') || '0');
         
-        // Apply modification rule: offsetChange positive increments total classes held without changing attended classes
-        // offsetChange negative reduces total classes toward initial scraped benchmark
         ongoingBunkOffset += offsetChange;
         if (ongoingBunkOffset < 0) ongoingBunkOffset = 0;
         card.setAttribute('data-bunk-offset', ongoingBunkOffset);
 
         try {
-            // Target the backend calculation router simulation API endpoint
-            const response = await fetch('http://127.0.0.1:5000/api/simulate', {
+            const response = await fetch(`${API_BASE_URL}/api/simulate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ total: originalTotal, attended: originalAttended, bunk: ongoingBunkOffset })
             });
             const metrics = await response.json();
 
-            // Refresh DOM Elements layout targets with calculation feedback profiles
             document.getElementById(`display-tot-${cardIndex}`).innerText = metrics.new_total;
             document.getElementById(`display-pct-${cardIndex}`).innerText = metrics.new_pct;
             document.getElementById(`action-text-${cardIndex}`).innerHTML = getActionText(metrics.needed, metrics.skippable);
             
-            // Adjust card status wrappers alerts dynamically based on simulation trends
             card.className = `subject-card ${metrics.status}`;
             const badge = document.getElementById(`badge-${cardIndex}`);
             badge.className = `badge ${metrics.status}`;
