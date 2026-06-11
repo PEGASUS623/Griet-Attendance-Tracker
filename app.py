@@ -27,7 +27,7 @@ app = Flask(__name__, static_folder='static')
 CORS(app)  # Enables frontend connections globally
 
 # --- DATABASE CONFIGURATION ---
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///griet_attendance.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///griet_attendance.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -136,19 +136,36 @@ def scrape_worker(username, password):
     state["log"]    = []
 
     options = webdriver.ChromeOptions()
-    # Production ready: Headless with full anti-bot stealth mechanisms attached
     options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1200,800")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
+    # ⚡ PRODUCTION DOCKER INTERCEPT PATHS FOR CHROMIUM ENGINE
+    if os.environ.get('RENDER'):
+        possible_paths = [
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome"
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                options.binary_location = path
+                break
+
     driver = None
     try:
         log("Launching headless engine with cloud mitigation shields...")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        
+        # Avoid running installation steps if we are using the Docker binary setup
+        if os.environ.get('RENDER'):
+            driver = webdriver.Chrome(options=options)
+        else:
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         
         # Inject stealth mappings
         stealth(driver,
