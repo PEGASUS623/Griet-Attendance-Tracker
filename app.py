@@ -388,8 +388,14 @@ def simulate():
 
 if __name__ == "__main__":
     os.makedirs("static", exist_ok=True)
+    
+    # 1. Dynamically read the port Render gives us (defaults to 10000 on Render)
+    port = int(os.environ.get("PORT", 5000))
+    
     print("\n" + "="*55)
     print("  GRIET Official Production Backend Online")
-    print("  Listening locally on http://localhost:5000")
+    print(f"  Listening globally on http://0.0.0.0:{port}")
     print("="*55 + "\n")
-    app.run(debug=False, port=5000, threaded=True)
+    
+    # 2. Bind to host 0.0.0.0 so the outside internet can reach your app
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
