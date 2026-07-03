@@ -22,7 +22,7 @@
         .badge.safe { background: #2ecc71; }
         .badge.warning { background: #f1c40f; color: #333; }
         .badge.risk { background: #e74c3c; }
-        
+
         /* Interactive Simulator Styles */
         .simulator-panel { margin-top: 12px; padding: 10px; background: #fcfcfc; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 13px; }
         .sim-controls { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
@@ -38,17 +38,18 @@
     <input type="text" id="rollNumber" placeholder="Enter Roll Number (e.g., 22241A05XX)">
     <input type="password" id="password" placeholder="Enter Portal Password">
     <button id="fetchBtn" onclick="startScrape()">Fetch Attendance</button>
-    
+
     <div id="status-box">
         <div id="status-text" style="font-weight: bold; color: #2c3e50;">System Idle. Ready to sync.</div>
         <div id="log-entries"></div>
     </div>
-    
+
     <div id="results"></div>
 </div>
 
 <script>
     let pollInterval;
+    let currentJobId = null; // NEW: tracks the job_id returned by /api/scrape
 
     // AUTOMATIC URL DETECTION: Pointing directly to the active network domain
     const API_BASE_URL = window.location.origin;
@@ -56,7 +57,7 @@
     async function startScrape() {
         const roll = document.getElementById('rollNumber').value.trim();
         const pass = document.getElementById('password').value.trim();
-        
+
         if(!roll || !pass) {
             document.getElementById('status-text').innerText = "⚠️ Enter both credentials.";
             return;
@@ -65,6 +66,7 @@
         document.getElementById('fetchBtn').disabled = true;
         document.getElementById('results').innerHTML = "";
         document.getElementById('log-entries').innerHTML = "";
+        document.getElementById('status-text').innerText = "🚀 Starting request...";
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/scrape`, {
@@ -79,6 +81,9 @@
                 document.getElementById('status-text').innerHTML = `<span style="color: #e74c3c;">❌ ${data.error}</span>`;
                 document.getElementById('fetchBtn').disabled = false;
             } else {
+                // NEW: store the job_id returned by the backend — required for polling
+                currentJobId = data.job_id;
+                if (pollInterval) clearInterval(pollInterval);
                 pollInterval = setInterval(checkStatus, 1500);
             }
         } catch (err) {
@@ -88,23 +93,35 @@
     }
 
     async function checkStatus() {
+        if (!currentJobId) return; // safety guard
+
         try {
-            const response = await fetch(`${API_BASE_URL}/api/status`);
+            // NEW: job_id is now part of the URL path
+            const response = await fetch(`${API_BASE_URL}/api/status/${currentJobId}`);
+
+            if (!response.ok) {
+                // job_id not found / expired on the backend
+                throw new Error(`Status endpoint returned ${response.status}`);
+            }
+
             const state = await response.json();
 
             const logBox = document.getElementById('log-entries');
-            logBox.innerHTML = state.log.map(line => `<div class="log-entry">› ${line}</div>`).join('');
+            logBox.innerHTML = (state.log || []).map(line => `<div class="log-entry">› ${line}</div>`).join('');
             logBox.scrollTop = logBox.scrollHeight;
 
-            if (state.status === "running") {
+            if (state.status === "queued") {
+                document.getElementById('status-text').innerText = "🕒 Queued — waiting for a free scraping slot...";
+            }
+            else if (state.status === "running") {
                 document.getElementById('status-text').innerText = "⏳ Syncing live with WebPros India portal...";
-            } 
+            }
             else if (state.status === "done") {
                 clearInterval(pollInterval);
                 document.getElementById('status-text').innerHTML = `<span style="color: #2ecc71;">✅ Synced successfully! (${state.data.fetched_at})</span>`;
                 document.getElementById('fetchBtn').disabled = false;
                 displayResults(state.data);
-            } 
+            }
             else if (state.status === "error") {
                 clearInterval(pollInterval);
                 document.getElementById('status-text').innerHTML = `<span style="color: #e74c3c;">❌ Error: ${state.error}</span>`;
@@ -125,15 +142,15 @@
             const card = document.createElement('div');
             card.className = `subject-card ${item.status}`;
             card.id = `subject-card-${index}`;
-            
+
             card.innerHTML = `
                 <span class="badge ${item.status}" id="badge-${index}">${item.status}</span>
                 <strong>${item.subject}</strong><br>
                 <span style="font-size: 15px; color: #555;">
-                    Classes: <span id="display-att-${index}">${item.attended}</span> / <span id="display-tot-${index}">${item.total}</span> 
+                    Classes: <span id="display-att-${index}">${item.attended}</span> / <span id="display-tot-${index}">${item.total}</span>
                     (<span id="display-pct-${index}">${item.percent}</span>%)
                 </span>
-                
+
                 <p id="action-text-${index}" style="margin: 8px 0 0 0; font-size: 14px; border-top: 1px dashed #eee; padding-top: 8px;">
                     ${getActionText(item.needed, item.skippable)}
                 </p>
@@ -164,7 +181,7 @@
     async function adjustSimulation(cardIndex, originalTotal, originalAttended, offsetChange) {
         const card = document.getElementById(`subject-card-${cardIndex}`);
         let ongoingBunkOffset = parseInt(card.getAttribute('data-bunk-offset') || '0');
-        
+
         ongoingBunkOffset += offsetChange;
         if (ongoingBunkOffset < 0) ongoingBunkOffset = 0;
         card.setAttribute('data-bunk-offset', ongoingBunkOffset);
@@ -180,7 +197,7 @@
             document.getElementById(`display-tot-${cardIndex}`).innerText = metrics.new_total;
             document.getElementById(`display-pct-${cardIndex}`).innerText = metrics.new_pct;
             document.getElementById(`action-text-${cardIndex}`).innerHTML = getActionText(metrics.needed, metrics.skippable);
-            
+
             card.className = `subject-card ${metrics.status}`;
             const badge = document.getElementById(`badge-${cardIndex}`);
             badge.className = `badge ${metrics.status}`;
